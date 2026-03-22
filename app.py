@@ -278,10 +278,13 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
                   f"margin-bottom:6px;'>{title}</div>") if title else ""
 
     html = f"""
-<div style="background:#0e1117;border-radius:8px;padding:10px 12px;margin:4px 0;">
+<style>
+  html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; }}
+</style>
+<div style="background:#0e1117;border-radius:8px;padding:10px 12px;box-sizing:border-box;width:100%;">
   {title_html}
   <canvas id="cv{uid}"
-    style="width:100%;height:80px;display:block;cursor:pointer;border-radius:4px;">
+    style="width:100%;height:120px;display:block;cursor:pointer;border-radius:4px;">
   </canvas>
   <audio id="au{uid}" src="data:audio/wav;base64,{wav_b64}"
     style="width:100%;margin-top:6px;" controls></audio>
@@ -329,8 +332,8 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
   }}
 
   function resize() {{
-    cv.width  = cv.offsetWidth || 780;
-    cv.height = 80;
+    cv.width  = cv.offsetWidth || 900;
+    cv.height = 120;
     draw(au.duration ? au.currentTime / au.duration : 0);
   }}
 
@@ -349,7 +352,7 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
 }})();
 </script>
 """
-    st.components.v1.html(html, height=165)
+    st.components.v1.html(html, height=210)
 
 
 # ─── Processing ───────────────────────────────────────────────────────────────
