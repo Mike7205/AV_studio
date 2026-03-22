@@ -300,20 +300,17 @@ with tab_edit:
 
     st.divider()
 
-    # ── Interactive waveform player ───────────────────────────────────────────
+    # ── Interactive waveform players (stacked) ───────────────────────────────
     st.subheader("Waveform Player")
 
     if st.session_state.processed_audio is not None:
-        col_orig, col_proc = st.columns(2)
-        with col_orig:
-            with st.spinner("Loading original…"):
-                mp3_orig = to_mp3_bytes(y_orig, sr)
-            wavesurfer_player(mp3_orig, label="Original", color="#4a9eff", progress_color="#aaa")
-        with col_proc:
-            y_proc_arr, _ = st.session_state.processed_audio
-            with st.spinner("Loading processed…"):
-                mp3_proc = to_mp3_bytes(y_proc_arr, sr)
-            wavesurfer_player(mp3_proc, label="Processed", color="#1db954", progress_color="#ff4b4b")
+        y_proc_arr, _ = st.session_state.processed_audio
+        with st.spinner("Loading original…"):
+            mp3_orig = to_mp3_bytes(y_orig, sr)
+        wavesurfer_player(mp3_orig, label="Original", color="#4a9eff", progress_color="#aaaaaa")
+        with st.spinner("Loading processed…"):
+            mp3_proc = to_mp3_bytes(y_proc_arr, sr)
+        wavesurfer_player(mp3_proc, label="Processed", color="#1db954", progress_color="#ff4b4b")
         y_work = y_proc_arr
     else:
         with st.spinner("Building player…"):
@@ -323,22 +320,76 @@ with tab_edit:
 
     st.divider()
 
-    # ── Noise reduction & gain ────────────────────────────────────────────────
-    st.subheader("Noise Reduction & Amplification")
+    # ── Processing parameters ─────────────────────────────────────────────────
+    st.subheader("Processing")
 
-    nc1, nc2, nc3 = st.columns(3)
-    noise_prop = nc1.slider("Noise reduction strength", 0.0, 1.0, 0.5, 0.05)
-    gain_db    = nc2.slider("Gain (dB)", -20, 40, 0)
-    stationary = nc3.checkbox("Stationary noise", value=True,
-                              help="Best for constant hum/hiss")
+    with st.expander("🔇  Noise Reduction", expanded=True):
+        nc1, nc2, nc3 = st.columns(3)
+        noise_prop = nc1.slider("Noise reduction strength", 0.0, 1.0, 0.5, 0.05)
+        gain_db    = nc2.slider("Gain (dB)", -20, 40, 0)
+        stationary = nc3.checkbox("Stationary noise", value=True,
+                                  help="Best for constant hum/hiss (fan, AC)")
+
+    with st.expander("🎙️  Vocal Enhancement", expanded=True):
+        vc1, vc2 = st.columns(2)
+        vocal_clarity = vc1.slider(
+            "Vocal clarity", 0.0, 1.0, 0.0, 0.05,
+            help="Separates harmonic (voice) from percussive content. "
+                 "Strengthens the voice track against background noise.",
+        )
+        hp_cutoff = vc2.slider(
+            "Low-cut filter (Hz)", 0, 500, 80, 10,
+            help="Removes low-frequency rumble below this frequency. "
+                 "80–120 Hz is safe for voice; higher values thin the sound.",
+        )
+
+    with st.expander("🎚️  Voice Modulation", expanded=True):
+        vm1, vm2 = st.columns(2)
+        pitch_steps = vm1.slider(
+            "Pitch shift (semitones)", -12, 12, 0,
+            help="Shifts pitch up (+) or down (−). "
+                 "±2 is subtle, ±6 is clearly audible, ±12 = one octave.",
+        )
+        time_stretch = vm2.slider(
+            "Speed ×", 0.5, 2.0, 1.0, 0.05,
+            help="< 1.0 = slower, > 1.0 = faster. Pitch is preserved.",
+        )
 
     bc1, bc2 = st.columns(2)
     if bc1.button("▶  Apply & compare"):
         with st.spinner("Processing… may take a moment"):
-            y_proc = nr.reduce_noise(y=y_orig, sr=sr,
-                                     prop_decrease=noise_prop, stationary=stationary)
+            from scipy.signal import butter, filtfilt
+
+            y_proc = y_orig.copy()
+
+            # 1. Low-cut filter
+            if hp_cutoff > 0:
+                b, a = butter(4, hp_cutoff / (sr / 2), btype="high")
+                y_proc = filtfilt(b, a, y_proc).astype(np.float32)
+
+            # 2. Noise reduction
+            if noise_prop > 0:
+                y_proc = nr.reduce_noise(y=y_proc, sr=sr,
+                                         prop_decrease=noise_prop,
+                                         stationary=stationary)
+
+            # 3. Vocal clarity (harmonic separation)
+            if vocal_clarity > 0:
+                y_harm = librosa.effects.harmonic(y_proc, margin=4.0)
+                y_proc = ((1 - vocal_clarity) * y_proc + vocal_clarity * y_harm).astype(np.float32)
+
+            # 4. Gain
             if gain_db != 0:
-                y_proc = np.clip(y_proc * (10 ** (gain_db / 20)), -1.0, 1.0)
+                y_proc = np.clip(y_proc * (10 ** (gain_db / 20)), -1.0, 1.0).astype(np.float32)
+
+            # 5. Pitch shift
+            if pitch_steps != 0:
+                y_proc = librosa.effects.pitch_shift(y_proc, sr=sr, n_steps=pitch_steps)
+
+            # 6. Time stretch
+            if time_stretch != 1.0:
+                y_proc = librosa.effects.time_stretch(y_proc, rate=time_stretch)
+
             st.session_state.processed_audio = (y_proc.astype(np.float32), sr)
         st.rerun()
 
