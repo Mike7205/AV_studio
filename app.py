@@ -487,6 +487,58 @@ with tab_edit:
     st.header("Edit & Export")
 
     # Source selector
+    # ── Quick file loader ──────────────────────────────────────────────────────
+    with st.expander("📂  Load file for editing", expanded=st.session_state.uploaded_audio is None):
+        qf_col, qu_col = st.columns(2)
+        with qf_col:
+            qfile = st.file_uploader(
+                "Upload audio file",
+                type=["wav", "mp3", "m4a", "flac", "ogg", "mp4"],
+                key="edit_file_uploader",
+                label_visibility="collapsed",
+            )
+            if qfile is not None:
+                with st.spinner("Loading…"):
+                    ext = Path(qfile.name).suffix.lower()
+                    raw = qfile.read()
+                    if ext in (".wav",):
+                        y_q, sr_q = wav_bytes_to_numpy(raw)
+                    else:
+                        wav_q = any_to_wav_bytes(raw, suffix=ext)
+                        y_q, sr_q = wav_bytes_to_numpy(wav_q)
+                st.session_state.uploaded_audio = (y_q, sr_q)
+                st.session_state.edit_src_override = "Uploaded file"
+                st.success(f"{qfile.name}  |  {len(y_q)/sr_q:.1f}s  @  {sr_q} Hz")
+                st.rerun()
+        with qu_col:
+            qu_url = st.text_input("…or paste URL / YouTube link",
+                                   key="edit_url_input",
+                                   label_visibility="collapsed",
+                                   placeholder="https://… or YouTube URL")
+            if st.button("⬇  Download", key="edit_dl_btn"):
+                if qu_url.strip():
+                    with st.spinner("Downloading…"):
+                        try:
+                            with tempfile.TemporaryDirectory() as td:
+                                subprocess.run(
+                                    ["yt-dlp", "-x", "--audio-format", "wav",
+                                     "-o", str(Path(td) / "out.%(ext)s"), qu_url],
+                                    check=True, capture_output=True,
+                                )
+                                wav_files = list(Path(td).glob("*.wav"))
+                                if not wav_files:
+                                    raise RuntimeError("No output file")
+                                y_q, sr_q = wav_bytes_to_numpy(wav_files[0].read_bytes())
+                        except Exception:
+                            r = requests.get(qu_url, timeout=30)
+                            r.raise_for_status()
+                            ext2 = "." + (qu_url.split(".")[-1].split("?")[0] or "mp3")
+                            y_q, sr_q = wav_bytes_to_numpy(any_to_wav_bytes(r.content, suffix=ext2))
+                    st.session_state.uploaded_audio = (y_q, sr_q)
+                    st.session_state.edit_src_override = "Uploaded file"
+                    st.rerun()
+
+    # ── Source selector ────────────────────────────────────────────────────────
     sources: dict[str, tuple[np.ndarray, int]] = {}
     if st.session_state.recorded_audio is not None:
         sources["Last recording"] = st.session_state.recorded_audio
@@ -494,26 +546,17 @@ with tab_edit:
         sources["Uploaded file"]  = st.session_state.uploaded_audio
 
     if not sources:
-        st.info("No audio available. Use the **Record** or **Upload** tab first.")
+        st.info("No audio available. Record something or load a file above.")
         st.stop()
 
     src_keys = list(sources.keys())
-    # Apply override from "Use uploaded file" button
     if st.session_state.edit_src_override in src_keys:
         default_idx = src_keys.index(st.session_state.edit_src_override)
         st.session_state.edit_src_override = None
     else:
         default_idx = 0
 
-    col_radio, col_btn = st.columns([3, 1])
-    with col_radio:
-        chosen_src = st.radio("Audio source", src_keys, index=default_idx, horizontal=True)
-    with col_btn:
-        if st.session_state.uploaded_audio is not None and "Last recording" in src_keys:
-            st.write("")  # vertical spacer to align with radio
-            if st.button("📂 Use uploaded file", use_container_width=True):
-                st.session_state.edit_src_override = "Uploaded file"
-                st.rerun()
+    chosen_src = st.radio("Audio source", src_keys, index=default_idx, horizontal=True)
 
     y_orig, sr = sources[chosen_src]
     dur = len(y_orig) / sr
