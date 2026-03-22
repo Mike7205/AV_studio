@@ -19,10 +19,15 @@ import matplotlib.pyplot as plt
 import noisereduce as nr
 import numpy as np
 import requests
-import sounddevice as sd
 import soundfile as sf
 import streamlit as st
 from pydub import AudioSegment
+
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_OK = True
+except OSError:
+    SOUNDDEVICE_OK = False
 
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -49,6 +54,8 @@ _rec_q: queue.Queue = queue.Queue()
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 def list_input_devices():
     """Return [(index, name)] for every device that has input channels."""
+    if not SOUNDDEVICE_OK:
+        return []
     return [
         (i, d["name"])
         for i, d in enumerate(sd.query_devices())
@@ -139,6 +146,14 @@ tab_rec, tab_upload, tab_edit = st.tabs(
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_rec:
     st.header("Record New Audio")
+
+    if not SOUNDDEVICE_OK:
+        st.warning(
+            "⚠️  PortAudio library not found on this server.\n\n"
+            "Recording works only when running the app **locally** with a physical microphone connected.\n\n"
+            "Use the **Upload** tab to load an existing audio file."
+        )
+        st.stop()
 
     devices = list_input_devices()
     if not devices:
