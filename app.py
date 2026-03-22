@@ -4,6 +4,7 @@ Streamlit app for recording, uploading, and editing audio.
 Optimised for FSDZMIC S338 USB microphone.
 """
 
+import base64
 import io
 import os
 import subprocess
@@ -248,11 +249,100 @@ def plot_waveform(y: np.ndarray, sr: int, title: str = "",
 def show_player(y: np.ndarray, sr: int, title: str = "",
                 start_s: float = 0.0, end_s: float | None = None,
                 color: str = "#1db954") -> None:
-    """Show waveform + st.audio player."""
-    fig = plot_waveform(y, sr, title, start_s, end_s, color=color)
-    st.pyplot(fig)
-    plt.close(fig)
-    st.audio(numpy_to_wav_bytes(y, sr), format="audio/wav")
+    """Canvas waveform with moving red playhead + clickable seek + audio controls."""
+    dur = len(y) / sr
+    if end_s is None:
+        end_s = dur
+
+    # Downsample to 600 bars, normalise to [0, 1]
+    n_bars = 600
+    step   = max(1, len(y) // n_bars)
+    peaks  = [float(np.max(np.abs(y[i: i + step]))) for i in range(0, len(y) - step, step)]
+    max_p  = max(peaks) if peaks else 1.0
+    if max_p > 0:
+        peaks = [p / max_p for p in peaks]
+
+    wav_b64    = base64.b64encode(numpy_to_wav_bytes(y, sr)).decode()
+    uid        = abs(hash((title, len(y), id(y))))
+    start_frac = start_s / dur if dur > 0 else 0.0
+    end_frac   = end_s   / dur if dur > 0 else 1.0
+
+    title_html = (f"<div style='color:{color};font-size:15px;font-weight:600;"
+                  f"margin-bottom:6px;'>{title}</div>") if title else ""
+
+    html = f"""
+<div style="background:#0e1117;border-radius:8px;padding:10px 12px;margin:4px 0;">
+  {title_html}
+  <canvas id="cv{uid}"
+    style="width:100%;height:80px;display:block;cursor:pointer;border-radius:4px;">
+  </canvas>
+  <audio id="au{uid}" src="data:audio/wav;base64,{wav_b64}"
+    style="width:100%;margin-top:6px;" controls></audio>
+</div>
+<script>
+(function(){{
+  const cv  = document.getElementById("cv{uid}");
+  const au  = document.getElementById("au{uid}");
+  const peaks = {peaks};
+  const color = "{color}";
+  const startFrac = {start_frac};
+  const endFrac   = {end_frac};
+
+  function draw(progress) {{
+    const W = cv.width, H = cv.height;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    const n = peaks.length;
+    const barW = W / n;
+    const playX = progress * W;
+
+    for (let i = 0; i < n; i++) {{
+      const x  = i * barW;
+      const h  = peaks[i] * H * 0.88;
+      const y0 = (H - h) / 2;
+      ctx.fillStyle = (x < playX) ? "rgba(255,255,255,0.40)" : color;
+      ctx.fillRect(x + 0.3, y0, Math.max(0.8, barW - 0.6), h);
+    }}
+
+    // Start / End trim markers
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#ff4b4b";
+    ctx.beginPath(); ctx.moveTo(startFrac * W, 0); ctx.lineTo(startFrac * W, H); ctx.stroke();
+    ctx.strokeStyle = "#ffa64b";
+    ctx.beginPath(); ctx.moveTo(endFrac * W, 0); ctx.lineTo(endFrac * W, H); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Moving red playhead
+    if (progress > 0 && progress <= 1) {{
+      ctx.strokeStyle = "#ff2222";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(playX, 0); ctx.lineTo(playX, H); ctx.stroke();
+    }}
+  }}
+
+  function resize() {{
+    cv.width  = cv.offsetWidth || 780;
+    cv.height = 80;
+    draw(au.duration ? au.currentTime / au.duration : 0);
+  }}
+
+  resize();
+  window.addEventListener("resize", resize);
+  au.addEventListener("timeupdate",    () => draw(au.currentTime / au.duration));
+  au.addEventListener("ended",         () => draw(1));
+  au.addEventListener("loadedmetadata",() => draw(0));
+
+  cv.addEventListener("click", function(e) {{
+    if (!au.duration) return;
+    const frac = (e.clientX - cv.getBoundingClientRect().left) / cv.offsetWidth;
+    au.currentTime = frac * au.duration;
+    draw(frac);
+  }});
+}})();
+</script>
+"""
+    st.components.v1.html(html, height=165)
 
 
 # ─── Processing ───────────────────────────────────────────────────────────────
