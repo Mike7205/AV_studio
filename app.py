@@ -42,7 +42,7 @@ for k, v in {
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 def seg_to_numpy(seg: AudioSegment) -> tuple[np.ndarray, int]:
     """Convert pydub AudioSegment → mono float32 numpy array."""
-    seg = seg.set_channels(1)
+    seg = seg.set_channels(1).set_sample_width(2)  # force 16-bit regardless of source depth
     sr  = seg.frame_rate
     raw = np.frombuffer(seg.raw_data, dtype=np.int16).astype(np.float32)
     raw /= 32768.0
@@ -93,25 +93,30 @@ def plot_waveform(y: np.ndarray, sr: int, title: str = "",
     dur = len(y) / sr
     if end_s is None:
         end_s = dur
-    n    = min(len(y), 8000)
-    times = np.linspace(0, dur, n)
-    y_ds  = np.interp(times, np.linspace(0, dur, len(y)), y)
 
-    fig, ax = plt.subplots(figsize=(12, 2.5), facecolor="#0e1117")
+    # Downsample to ~800 bars for a bar-style waveform
+    n_bars = 800
+    step   = max(1, len(y) // n_bars)
+    bars   = np.array([np.max(np.abs(y[i:i+step])) for i in range(0, len(y)-step, step)])
+    times  = np.linspace(0, dur, len(bars))
+
+    fig, ax = plt.subplots(figsize=(12, 3), facecolor="#0e1117")
     ax.set_facecolor("#0e1117")
-    ax.fill_between(times, y_ds, color="#1db954", alpha=0.85, linewidth=0)
+    ax.bar(times, bars,  width=dur/len(bars)*0.9, color="#1db954", alpha=0.9)
+    ax.bar(times, -bars, width=dur/len(bars)*0.9, color="#1db954", alpha=0.9)
     ax.axvline(start_s, color="#ff4b4b", linewidth=1.5, label=f"Start {start_s:.2f}s")
     ax.axvline(end_s,   color="#ffa64b", linewidth=1.5, label=f"End {end_s:.2f}s")
     ax.set_xlim(0, dur)
-    ax.set_xlabel("Time (s)", color="white", fontsize=8)
-    ax.set_ylabel("Amp", color="white", fontsize=8)
+    ax.set_ylim(-1, 1)
+    ax.set_xlabel("Time (s)", color="white", fontsize=9)
+    ax.set_ylabel("Amplitude", color="white", fontsize=9)
     if title:
-        ax.set_title(title, color="white", fontsize=10)
-    ax.tick_params(colors="white", labelsize=7)
+        ax.set_title(title, color="white", fontsize=11)
+    ax.tick_params(colors="white", labelsize=8)
     for sp in ax.spines.values():
         sp.set_edgecolor("#333")
-    ax.legend(facecolor="#1e1e1e", labelcolor="white", fontsize=7)
-    fig.tight_layout(pad=0.3)
+    ax.legend(facecolor="#1e1e1e", labelcolor="white", fontsize=8)
+    fig.tight_layout(pad=0.4)
     return fig
 
 
