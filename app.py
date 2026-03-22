@@ -124,24 +124,39 @@ with tab_rec:
     if audio_input is not None:
         raw_bytes = audio_input.read()
 
-        # Playback: use raw bytes directly (no re-encoding)
-        st.success("Recording ready — press play to listen:")
-        st.audio(raw_bytes, format="audio/wav")
+        with st.spinner("Converting…"):
+            # Write raw WAV to temp file, then convert via pydub
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(raw_bytes)
+                tmp_path = tmp.name
+            seg = AudioSegment.from_file(tmp_path)
+            os.unlink(tmp_path)
 
-        # Load into numpy for Edit tab processing
-        with st.spinner("Preparing for editing…"):
+            # MP3 for playback (universally supported in all browsers)
+            mp3_buf = io.BytesIO()
+            seg.export(mp3_buf, format="mp3", bitrate="192k")
+            mp3_bytes = mp3_buf.getvalue()
+
+            # MP4 (AAC) for download
+            mp4_buf = io.BytesIO()
+            seg.export(mp4_buf, format="mp4", codec="aac")
+            mp4_bytes = mp4_buf.getvalue()
+
+            # Load into numpy for Edit tab
             y, sr = load_audio_bytes(raw_bytes, "recording.wav")
+
         st.session_state.recorded_audio = (y, sr)
         st.session_state.working_audio  = (y, sr)
-        st.caption(f"Duration: {len(y)/sr:.1f}s  |  Sample rate: {sr} Hz")
 
-        # Download button — opens browser save dialog (Windows file picker)
-        fname = st.text_input("Filename", value="recording.wav")
+        st.success(f"Recording ready — {len(y)/sr:.1f}s  |  {sr} Hz")
+        st.audio(mp3_bytes, format="audio/mp3")
+
+        fname = st.text_input("Filename", value="recording.mp4")
         st.download_button(
-            label="💾  Save to disk",
-            data=raw_bytes,
+            label="💾  Save as MP4",
+            data=mp4_bytes,
             file_name=fname,
-            mime="audio/wav",
+            mime="audio/mp4",
             key="dl_rec",
         )
 
