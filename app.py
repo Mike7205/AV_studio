@@ -134,9 +134,16 @@ p, span, div {
     filter: sepia(0.3) hue-rotate(-10deg);
 }
 
-/* Expander header text — blue so it's readable on dark background */
-.streamlit-expanderHeader, .st-emotion-cache-ue6h4q,
-details > summary, [data-testid="stExpander"] summary {
+/* Expander header text — blue */
+.streamlit-expanderHeader,
+.streamlit-expanderHeader span,
+.streamlit-expanderHeader p,
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary span,
+[data-testid="stExpander"] summary p,
+details > summary,
+details > summary span,
+details > summary p {
     color: #4a9eff !important;
     font-weight: 600;
 }
@@ -379,36 +386,124 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
 
 # ─── Processing ───────────────────────────────────────────────────────────────
 
+def _shelf(y: np.ndarray, sr: int, freq: float, gain_db: float, btype: str) -> np.ndarray:
+    """Low or high shelf filter via bandpass mix."""
+    if gain_db == 0:
+        return y
+    nyq = sr / 2.0
+    f = np.clip(freq / nyq, 0.001, 0.999)
+    b, a = butter(2, f, btype=btype)
+    band = filtfilt(b, a, y).astype(np.float32)
+    return (y + band * (10 ** (gain_db / 20) - 1)).astype(np.float32)
+
+
+def _peak(y: np.ndarray, sr: int, lo: float, hi: float, gain_db: float) -> np.ndarray:
+    """Peaking EQ band via bandpass mix."""
+    if gain_db == 0:
+        return y
+    nyq = sr / 2.0
+    lo_f = np.clip(lo / nyq, 0.001, 0.999)
+    hi_f = np.clip(hi / nyq, 0.001, 0.999)
+    if lo_f >= hi_f:
+        return y
+    b, a = butter(2, [lo_f, hi_f], btype="band")
+    band = filtfilt(b, a, y).astype(np.float32)
+    return (y + band * (10 ** (gain_db / 20) - 1)).astype(np.float32)
+
+
+def _compress(y: np.ndarray, sr: int,
+              threshold_db: float, ratio: float,
+              attack_ms: float, release_ms: float) -> np.ndarray:
+    """Chunk-based feed-forward RMS compressor."""
+    if ratio <= 1.0:
+        return y
+    threshold = 10 ** (threshold_db / 20)
+    chunk = max(64, int(sr * 0.005))          # ~5 ms chunks
+    att_k  = 1.0 - np.exp(-1.0 / max(1, sr * attack_ms  / 1000))
+    rel_k  = 1.0 - np.exp(-1.0 / max(1, sr * release_ms / 1000))
+    out   = y.copy()
+    gain  = 1.0
+    for i in range(0, len(y), chunk):
+        seg = y[i:i + chunk]
+        rms = float(np.sqrt(np.mean(seg ** 2))) + 1e-9
+        if rms > threshold:
+            target = (threshold * (rms / threshold) ** (1.0 / ratio)) / rms
+        else:
+            target = 1.0
+        k = att_k if target < gain else rel_k
+        gain += k * (target - gain)
+        out[i:i + chunk] = (seg * gain).astype(np.float32)
+    return out.astype(np.float32)
+
+
+def _deess(y: np.ndarray, sr: int, amount: float, freq_hz: float) -> np.ndarray:
+    """Broadband de-esser: attenuates sibilants above freq_hz."""
+    if amount <= 0:
+        return y
+    nyq = sr / 2.0
+    f = np.clip(freq_hz / nyq, 0.001, 0.999)
+    b, a = butter(4, f, btype="high")
+    sib = filtfilt(b, a, y).astype(np.float32)
+    return (y - sib * np.clip(amount, 0, 1) * 0.85).astype(np.float32)
+
+
 def apply_processing(y: np.ndarray, sr: int,
                      noise_prop: float, stationary: bool,
                      gain_db: float, hp_cutoff: int,
                      vocal_clarity: float,
-                     pitch_steps: int, speed: float) -> np.ndarray:
+                     pitch_steps: int, speed: float,
+                     eq_low: float = 0, eq_mid: float = 0, eq_high: float = 0,
+                     comp_thresh: float = -40, comp_ratio: float = 1.0,
+                     comp_attack: float = 10, comp_release: float = 100,
+                     deess_amount: float = 0, deess_freq: float = 6000,
+                     limit_enabled: bool = False, limit_ceil: float = -1) -> np.ndarray:
     out = y.copy()
 
+    # 1. High-pass (remove rumble)
     if hp_cutoff > 0:
         b, a = butter(4, hp_cutoff / (sr / 2), btype="high")
         out  = filtfilt(b, a, out).astype(np.float32)
 
+    # 2. Noise reduction
     if noise_prop > 0:
         out = nr.reduce_noise(y=out, sr=sr,
                               prop_decrease=noise_prop,
                               stationary=stationary).astype(np.float32)
 
+    # 3. EQ – 3-band (low shelf / mid peak / high shelf)
+    out = _shelf(out, sr, 200,  eq_low,  "low")
+    out = _peak (out, sr, 500, 4000, eq_mid)
+    out = _shelf(out, sr, 6000, eq_high, "high")
+
+    # 4. Vocal clarity (existing)
     if vocal_clarity > 0:
         lo, hi = 200, 4000
         b2, a2 = butter(4, [lo / (sr / 2), hi / (sr / 2)], btype="band")
         mid = filtfilt(b2, a2, out).astype(np.float32)
         out = ((1 - vocal_clarity) * out + vocal_clarity * mid).astype(np.float32)
 
-    if gain_db != 0:
-        out = np.clip(out * (10 ** (gain_db / 20)), -1.0, 1.0).astype(np.float32)
+    # 5. Compressor
+    out = _compress(out, sr, comp_thresh, comp_ratio, comp_attack, comp_release)
 
+    # 6. De-esser
+    out = _deess(out, sr, deess_amount, deess_freq)
+
+    # 7. Pitch / speed
     if pitch_steps != 0:
         out = librosa.effects.pitch_shift(out, sr=sr, n_steps=float(pitch_steps))
-
     if speed != 1.0:
         out = librosa.effects.time_stretch(out, rate=speed)
+
+    # 8. Gain
+    if gain_db != 0:
+        out = (out * (10 ** (gain_db / 20))).astype(np.float32)
+
+    # 9. Limiter (last in chain)
+    if limit_enabled:
+        ceil = 10 ** (limit_ceil / 20)
+        out = (np.tanh(out / ceil) * ceil).astype(np.float32)
+    else:
+        out = np.clip(out, -1.0, 1.0).astype(np.float32)
 
     return out.astype(np.float32)
 
@@ -573,7 +668,42 @@ with tab_edit:
             hp_cutoff     = c2.slider("Low-cut filter (Hz)", 0, 500, 80, 10,
                                       help="Removes rumble below this frequency")
 
-        with st.expander("🎚️  Voice Modulation", expanded=True):
+        with st.expander("🎛️  Equalizer (EQ)", expanded=False):
+            c1, c2, c3 = st.columns(3)
+            eq_low  = c1.slider("Low shelf 200 Hz (dB)", -12, 12, 0,
+                                help="Boost/cut bass & warmth")
+            eq_mid  = c2.slider("Mid 500–4k Hz (dB)", -12, 12, 0,
+                                help="Boost/cut vocal presence")
+            eq_high = c3.slider("High shelf 6 kHz (dB)", -12, 12, 0,
+                                help="Boost/cut air & brightness")
+
+        with st.expander("🗜️  Compressor", expanded=False):
+            c1, c2, c3, c4 = st.columns(4)
+            comp_thresh  = c1.slider("Threshold (dBFS)", -40, 0, -40,
+                                     help="Level where compression starts · -40 = off")
+            comp_ratio   = c2.slider("Ratio", 1.0, 10.0, 1.0, 0.5,
+                                     help="1:1 = off · 2:1 gentle · 8:1 heavy")
+            comp_attack  = c3.slider("Attack (ms)", 1, 100, 10,
+                                     help="How fast compression kicks in")
+            comp_release = c4.slider("Release (ms)", 10, 500, 100,
+                                     help="How fast compression releases")
+
+        with st.expander("🔉  De-esser", expanded=False):
+            c1, c2 = st.columns(2)
+            deess_amount = c1.slider("De-ess amount", 0.0, 1.0, 0.0, 0.05,
+                                     help="Reduces harsh 's', 'sz', 'cz' sibilants · 0 = off")
+            deess_freq   = c2.slider("Sibilant threshold (Hz)", 4000, 10000, 6000, 500,
+                                     help="Attenuates frequencies above this value")
+
+        with st.expander("📊  Limiter", expanded=False):
+            c1, c2 = st.columns(2)
+            limit_enabled = c1.checkbox("Enable limiter", value=False,
+                                        help="Soft-clip at the end of the chain — prevents clipping")
+            limit_ceil    = c2.slider("Ceiling (dBFS)", -6, 0, -1,
+                                      help="Maximum output level",
+                                      disabled=False)
+
+        with st.expander("🎚️  Voice Modulation", expanded=False):
             c1, c2 = st.columns(2)
             pitch_steps = c1.slider("Pitch shift (semitones)", -12, 12, 0,
                                     help="±2 subtle · ±12 = one octave")
@@ -593,6 +723,11 @@ with tab_edit:
                 y_orig, sr,
                 noise_prop, stationary, gain_db, hp_cutoff,
                 vocal_clarity, pitch_steps, speed,
+                eq_low=eq_low, eq_mid=eq_mid, eq_high=eq_high,
+                comp_thresh=comp_thresh, comp_ratio=comp_ratio,
+                comp_attack=comp_attack, comp_release=comp_release,
+                deess_amount=deess_amount, deess_freq=deess_freq,
+                limit_enabled=limit_enabled, limit_ceil=limit_ceil,
             )
             st.session_state.processed_audio = (y_proc, sr)
         st.rerun()
