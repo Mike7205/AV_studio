@@ -565,8 +565,8 @@ _VIDEO_REC_HTML = """
     <video id="preview" autoplay muted playsinline></video>
 
     <!-- VU meter -->
-    <canvas id="vu" height="28"
-      style="width:100%;display:block;border-radius:4px;margin-top:5px;background:#0a0a0a;">
+    <canvas id="vu" height="48"
+      style="width:100%;display:block;border-radius:6px;margin-top:5px;background:#1c1c1e;">
     </canvas>
 
     <!-- device selectors — compact single row -->
@@ -641,16 +641,16 @@ _VIDEO_REC_HTML = """
     });
   }
 
-  // ── VU meter ──────────────────────────────────────────────────────────
+  // ── Waveform meter (same style as st.audio_input) ─────────────────────
   let vuRaf, analyser, dataArr;
 
   function startVU(audioStream){
     if(vuRaf) cancelAnimationFrame(vuRaf);
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const src = ctx.createMediaStreamSource(audioStream);
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.6;
+    const actx = new (window.AudioContext||window.webkitAudioContext)();
+    const src  = actx.createMediaStreamSource(audioStream);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.75;
     src.connect(analyser);
     dataArr = new Uint8Array(analyser.frequencyBinCount);
     const canvas = $('vu');
@@ -660,37 +660,26 @@ _VIDEO_REC_HTML = """
       vuRaf = requestAnimationFrame(draw);
       canvas.width = canvas.offsetWidth;
       const W = canvas.width, H = canvas.height;
-      analyser.getByteFrequencyData(dataArr);
-      // RMS level 0-1
-      let sum = 0;
-      for(let i=0;i<dataArr.length;i++) sum += dataArr[i]*dataArr[i];
-      const rms = Math.sqrt(sum/dataArr.length)/255;
-      const level = Math.min(1, rms * 3.5);   // boost for visibility
+      analyser.getByteTimeDomainData(dataArr);   // waveform, not spectrum
 
-      c.clearRect(0,0,W,H);
-      // background track
-      c.fillStyle='#1a1a1a';
-      c.roundRect(0, H*0.25, W, H*0.5, 4);
-      c.fill();
+      c.fillStyle = '#1c1c1e';
+      c.fillRect(0, 0, W, H);
 
-      // coloured fill: green → yellow → red
-      const filled = Math.round(level * W);
-      if(filled > 0){
-        const grad = c.createLinearGradient(0,0,W,0);
-        grad.addColorStop(0,    '#1db954');
-        grad.addColorStop(0.65, '#f5c518');
-        grad.addColorStop(0.85, '#ff6a00');
-        grad.addColorStop(1.0,  '#ff2222');
-        c.fillStyle = grad;
-        c.roundRect(0, H*0.25, filled, H*0.5, 4);
-        c.fill();
-      }
+      const bars  = 120;
+      const step  = Math.floor(dataArr.length / bars);
+      const barW  = W / bars;
+      const color = '#1db954';                   // same green as audio_input
 
-      // tick marks every 10%
-      c.fillStyle = 'rgba(0,0,0,0.35)';
-      for(let i=1;i<10;i++){
-        const x = W*i/10;
-        c.fillRect(x-0.5, H*0.2, 1, H*0.6);
+      for(let i = 0; i < bars; i++){
+        // average a small window around each bar
+        let sum = 0;
+        for(let j = 0; j < step; j++) sum += Math.abs(dataArr[i*step+j] - 128);
+        const amp = (sum / step) / 128;          // 0-1
+        const h   = Math.max(2, amp * H * 1.8);
+        const x   = i * barW + barW * 0.15;
+        const y   = (H - h) / 2;
+        c.fillStyle = color;
+        c.fillRect(x, y, barW * 0.7, h);
       }
     }
     draw();
