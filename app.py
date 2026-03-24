@@ -564,6 +564,11 @@ _VIDEO_REC_HTML = """
   <div id="recordPhase">
     <video id="preview" autoplay muted playsinline></video>
 
+    <!-- VU meter -->
+    <canvas id="vu" height="28"
+      style="width:100%;display:block;border-radius:4px;margin-top:5px;background:#0a0a0a;">
+    </canvas>
+
     <!-- device selectors — compact single row -->
     <div class="row">
       <div style="flex:1;min-width:140px;">
@@ -636,9 +641,65 @@ _VIDEO_REC_HTML = """
     });
   }
 
+  // ── VU meter ──────────────────────────────────────────────────────────
+  let vuRaf, analyser, dataArr;
+
+  function startVU(audioStream){
+    if(vuRaf) cancelAnimationFrame(vuRaf);
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const src = ctx.createMediaStreamSource(audioStream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.6;
+    src.connect(analyser);
+    dataArr = new Uint8Array(analyser.frequencyBinCount);
+    const canvas = $('vu');
+    const c = canvas.getContext('2d');
+
+    function draw(){
+      vuRaf = requestAnimationFrame(draw);
+      canvas.width = canvas.offsetWidth;
+      const W = canvas.width, H = canvas.height;
+      analyser.getByteFrequencyData(dataArr);
+      // RMS level 0-1
+      let sum = 0;
+      for(let i=0;i<dataArr.length;i++) sum += dataArr[i]*dataArr[i];
+      const rms = Math.sqrt(sum/dataArr.length)/255;
+      const level = Math.min(1, rms * 3.5);   // boost for visibility
+
+      c.clearRect(0,0,W,H);
+      // background track
+      c.fillStyle='#1a1a1a';
+      c.roundRect(0, H*0.25, W, H*0.5, 4);
+      c.fill();
+
+      // coloured fill: green → yellow → red
+      const filled = Math.round(level * W);
+      if(filled > 0){
+        const grad = c.createLinearGradient(0,0,W,0);
+        grad.addColorStop(0,    '#1db954');
+        grad.addColorStop(0.65, '#f5c518');
+        grad.addColorStop(0.85, '#ff6a00');
+        grad.addColorStop(1.0,  '#ff2222');
+        c.fillStyle = grad;
+        c.roundRect(0, H*0.25, filled, H*0.5, 4);
+        c.fill();
+      }
+
+      // tick marks every 10%
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      for(let i=1;i<10;i++){
+        const x = W*i/10;
+        c.fillRect(x-0.5, H*0.2, 1, H*0.6);
+      }
+    }
+    draw();
+  }
+
   // ── Start stream with selected devices ────────────────────────────────
   async function startStream(){
     if(stream) stream.getTracks().forEach(t=>t.stop());
+    if(vuRaf){ cancelAnimationFrame(vuRaf); vuRaf=null; }
     const micId=$('micSel').value;
     const camId=$('camSel').value;
     stream = await navigator.mediaDevices.getUserMedia({
@@ -660,6 +721,7 @@ _VIDEO_REC_HTML = """
     const pv=$('preview');
     pv.srcObject=stream;
     await pv.play().catch(()=>{});
+    startVU(stream);
     // show actual resolution
     const vt=stream.getVideoTracks()[0];
     if(vt){
