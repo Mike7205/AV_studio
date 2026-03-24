@@ -511,93 +511,186 @@ def apply_processing(y: np.ndarray, sr: int,
 # ─── Video recorder HTML component ───────────────────────────────────────────
 _VIDEO_REC_HTML = """
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: transparent; font-family: sans-serif; }
-  #wrap {
-    background: rgba(20,10,5,0.88);
-    border-radius: 10px;
-    padding: 14px;
-    color: #f0e0c8;
-  }
-  #preview {
-    width: 100%; border-radius: 6px; background: #000;
-    max-height: 280px; object-fit: cover; display: block;
-  }
-  #playback { width: 100%; border-radius: 6px; margin-top: 10px; display: block; }
-  .controls { display: flex; gap: 10px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
-  button {
-    padding: 8px 18px; border-radius: 6px;
-    border: 1px solid #c4884a;
-    background: rgba(139,92,42,0.85);
-    color: #fff5e0; cursor: pointer;
-    font-size: 14px; font-weight: 600;
-  }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
-  button:hover:not(:disabled) { background: rgba(180,120,60,0.95); }
-  #stopBtn  { border-color: #e05050; background: rgba(120,40,40,0.85); }
-  #stopBtn:hover:not(:disabled) { background: rgba(180,60,60,0.95); }
-  #dlBtn {
-    display: inline-block; margin-top: 10px;
-    padding: 8px 18px; border-radius: 6px;
-    border: 1px solid #6aaa6a;
-    background: rgba(40,100,60,0.85);
-    color: #d4f0d4; text-decoration: none;
-    font-size: 14px; font-weight: 600;
-  }
-  #timer  { color: #ff7070; font-weight: 700; font-size: 15px; min-width: 58px; }
-  #status { color: #aaa; font-size: 13px; margin-top: 8px; }
-  #resultBox { display: none; }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{background:transparent;font-family:sans-serif;height:100%;}
+  #wrap{background:rgba(20,10,5,0.88);border-radius:10px;padding:14px;color:#f0e0c8;}
+  #preview{width:100%;border-radius:6px;background:#111;display:block;
+           aspect-ratio:16/9;object-fit:cover;}
+  #playback{width:100%;border-radius:6px;margin-top:8px;display:block;}
+  .row{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;}
+  select{padding:6px 10px;border-radius:6px;border:1px solid #c4884a;
+         background:rgba(30,15,5,0.9);color:#f0e0c8;font-size:13px;flex:1;min-width:0;}
+  button{padding:8px 16px;border-radius:6px;border:1px solid #c4884a;
+         background:rgba(139,92,42,0.85);color:#fff5e0;cursor:pointer;
+         font-size:14px;font-weight:600;white-space:nowrap;}
+  button:disabled{opacity:0.35;cursor:not-allowed;}
+  button:hover:not(:disabled){background:rgba(180,120,60,0.95);}
+  #initBtn{width:100%;padding:12px;font-size:15px;margin-bottom:8px;}
+  #stopBtn{border-color:#e05050;background:rgba(120,40,40,0.85);}
+  #stopBtn:hover:not(:disabled){background:rgba(180,60,60,0.95);}
+  #newBtn{border-color:#6aaa6a;background:rgba(40,100,60,0.85);color:#d4f0d4;}
+  #dlBtn{display:inline-block;padding:8px 16px;border-radius:6px;
+         border:1px solid #6aaa6a;background:rgba(40,100,60,0.85);
+         color:#d4f0d4;text-decoration:none;font-size:14px;font-weight:600;}
+  #timer{color:#ff7070;font-weight:700;font-size:15px;min-width:56px;}
+  #status{color:#aaa;font-size:12px;margin-top:6px;}
+  label{font-size:12px;color:#aaa;display:block;margin-bottom:3px;}
+  #resultBox,#recordPhase{display:none;}
 </style>
+
 <div id="wrap">
-  <video id="preview" autoplay muted playsinline></video>
-  <div class="controls">
-    <button id="startBtn">🔴 Nagraj</button>
-    <button id="stopBtn" disabled>⏹ Stop</button>
-    <span id="timer">00:00</span>
+
+  <!-- Phase 1: init -->
+  <div id="initPhase">
+    <button id="initBtn">📷 Włącz kamerę i mikrofon</button>
+    <div id="status">Kliknij przycisk aby przyznać dostęp do kamery i mikrofonu.</div>
   </div>
-  <div id="status">Inicjalizacja kamery…</div>
+
+  <!-- Phase 2: recording -->
+  <div id="recordPhase">
+    <video id="preview" autoplay muted playsinline></video>
+    <div class="row">
+      <div style="flex:1;min-width:180px;">
+        <label>🎤 Mikrofon</label>
+        <select id="micSel"></select>
+      </div>
+      <div style="flex:1;min-width:150px;">
+        <label>📹 Kamera</label>
+        <select id="camSel"></select>
+      </div>
+    </div>
+    <div class="row">
+      <button id="startBtn">🔴 Nagraj</button>
+      <button id="stopBtn" disabled>⏹ Stop</button>
+      <span id="timer">00:00</span>
+    </div>
+    <div id="status2" style="color:#aaa;font-size:12px;margin-top:6px;">
+      Kamera gotowa — wybierz urządzenia i kliknij Nagraj.
+    </div>
+  </div>
+
+  <!-- Phase 3: result -->
   <div id="resultBox">
     <video id="playback" controls playsinline></video>
-    <br><a id="dlBtn">💾 Pobierz nagranie</a>
+    <div class="row" style="margin-top:8px;">
+      <a id="dlBtn">💾 Pobierz nagranie</a>
+      <button id="newBtn">🔄 Nowe nagranie</button>
+    </div>
+    <div id="status3" style="color:#aaa;font-size:12px;margin-top:6px;"></div>
   </div>
+
 </div>
+
 <script>
 (function(){
-  let stream, recorder, chunks=[], timerIv, t0;
   const $=id=>document.getElementById(id);
   const pad=n=>String(n).padStart(2,'0');
+  let stream, recorder, chunks=[], timerIv, t0;
 
-  navigator.mediaDevices.getUserMedia({video:true, audio:true})
-    .then(s=>{
-      stream=s;
-      $('preview').srcObject=s;
-      $('status').textContent='Kamera gotowa — kliknij Nagraj';
-    })
-    .catch(e=>{
-      $('status').textContent='⚠ Brak dostępu do kamery: '+e.message;
-      $('startBtn').disabled=true;
+  // ── Best supported mime type ──────────────────────────────────────────
+  const MIME = ['video/mp4;codecs=avc1,mp4a.40.2',
+                'video/mp4',
+                'video/webm;codecs=vp9,opus',
+                'video/webm;codecs=vp8,opus',
+                'video/webm']
+    .find(t=>MediaRecorder.isTypeSupported(t)) || '';
+  const EXT  = MIME.includes('mp4') ? 'mp4' : 'webm';
+
+  // ── Populate device selects ───────────────────────────────────────────
+  async function enumDevices(){
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const mics = devs.filter(d=>d.kind==='audioinput');
+    const cams = devs.filter(d=>d.kind==='videoinput');
+    const ms=$('micSel'), cs=$('camSel');
+    ms.innerHTML=''; cs.innerHTML='';
+    mics.forEach((d,i)=>{
+      const o=document.createElement('option');
+      o.value=d.deviceId;
+      o.textContent=d.label||('Mikrofon '+(i+1));
+      ms.appendChild(o);
     });
+    cams.forEach((d,i)=>{
+      const o=document.createElement('option');
+      o.value=d.deviceId;
+      o.textContent=d.label||('Kamera '+(i+1));
+      cs.appendChild(o);
+    });
+  }
 
-  $('startBtn').onclick=function(){
+  // ── Start stream with selected devices ────────────────────────────────
+  async function startStream(){
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    const micId=$('micSel').value;
+    const camId=$('camSel').value;
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{
+        deviceId: camId?{exact:camId}:undefined,
+        width:{ideal:1920,min:1280},
+        height:{ideal:1080,min:720},
+        frameRate:{ideal:30,min:24}
+      },
+      audio:{
+        deviceId: micId?{exact:micId}:undefined,
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false,
+        sampleRate:48000,
+        channelCount:2
+      }
+    });
+    const pv=$('preview');
+    pv.srcObject=stream;
+    await pv.play().catch(()=>{});
+    // show actual resolution
+    const vt=stream.getVideoTracks()[0];
+    if(vt){
+      const s=vt.getSettings();
+      $('status2').textContent=
+        'Kamera: '+s.width+'×'+s.height+' @'+Math.round(s.frameRate||30)+'fps  |  '+(vt.label||'');
+    }
+  }
+
+  // ── Init button ───────────────────────────────────────────────────────
+  $('initBtn').onclick = async function(){
+    try{
+      // first grab any stream to trigger permission prompt
+      const tmp = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+      tmp.getTracks().forEach(t=>t.stop());
+      await enumDevices();
+      $('initPhase').style.display='none';
+      $('recordPhase').style.display='block';
+      await startStream();
+    }catch(e){
+      $('status').textContent='⚠ '+e.message;
+    }
+  };
+
+  // ── Device change ─────────────────────────────────────────────────────
+  $('micSel').onchange = ()=>startStream();
+  $('camSel').onchange = ()=>startStream();
+
+  // ── Start recording ───────────────────────────────────────────────────
+  $('startBtn').onclick = function(){
     chunks=[];
-    const mime=['video/mp4;codecs=avc1,mp4a.40.2','video/mp4',
-                'video/webm;codecs=vp9,opus','video/webm']
-      .find(t=>MediaRecorder.isTypeSupported(t))||'';
-    recorder=new MediaRecorder(stream, mime?{mimeType:mime}:{});
+    const opts = MIME
+      ? {mimeType:MIME, videoBitsPerSecond:8_000_000, audioBitsPerSecond:256_000}
+      : {videoBitsPerSecond:8_000_000, audioBitsPerSecond:256_000};
+    recorder=new MediaRecorder(stream,opts);
     recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
     recorder.onstop=()=>{
       clearInterval(timerIv);
       const blob=new Blob(chunks,{type:recorder.mimeType||'video/webm'});
       const url=URL.createObjectURL(blob);
-      const ext=(recorder.mimeType||'').includes('mp4')?'mp4':'webm';
       $('playback').src=url;
       $('dlBtn').href=url;
-      $('dlBtn').download='nagranie_av.'+ext;
-      $('dlBtn').textContent='💾 Pobierz nagranie.'+ext;
+      $('dlBtn').download='nagranie_av.'+EXT;
+      $('dlBtn').textContent='💾 Pobierz nagranie.'+EXT;
+      const mb=(blob.size/1048576).toFixed(1);
+      $('status3').textContent='Rozmiar: '+mb+' MB  |  Format: '+(recorder.mimeType||EXT);
+      $('recordPhase').style.display='none';
       $('resultBox').style.display='block';
-      $('status').textContent='Nagranie gotowe — odtwórz lub pobierz poniżej.';
     };
-    recorder.start(100);
+    recorder.start(200);
     t0=Date.now();
     timerIv=setInterval(()=>{
       const s=Math.floor((Date.now()-t0)/1000);
@@ -605,15 +698,24 @@ _VIDEO_REC_HTML = """
     },500);
     $('startBtn').disabled=true;
     $('stopBtn').disabled=false;
-    $('resultBox').style.display='none';
-    $('status').textContent='🔴 Nagrywanie…';
+    $('status2').textContent='🔴 Nagrywanie…';
   };
 
+  // ── Stop recording ────────────────────────────────────────────────────
   $('stopBtn').onclick=function(){
     recorder.stop();
     $('stopBtn').disabled=true;
-    $('startBtn').disabled=false;
   };
+
+  // ── New recording ─────────────────────────────────────────────────────
+  $('newBtn').onclick=async function(){
+    $('resultBox').style.display='none';
+    $('recordPhase').style.display='block';
+    $('startBtn').disabled=false;
+    $('timer').textContent='00:00';
+    await startStream();
+  };
+
 })();
 </script>
 """
@@ -671,7 +773,7 @@ with tab_rec:
             "Po zakończeniu pobierz plik MP4/WebM przyciskiem poniżej.",
             icon="🎥",
         )
-        st.components.v1.html(_VIDEO_REC_HTML, height=560)
+        st.components.v1.html(_VIDEO_REC_HTML, height=660)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 – EDIT & EXPORT
