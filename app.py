@@ -512,71 +512,90 @@ def apply_processing(y: np.ndarray, sr: int,
 _VIDEO_REC_HTML = """
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{background:transparent;font-family:sans-serif;height:100%;}
-  #wrap{background:rgba(20,10,5,0.88);border-radius:10px;padding:14px;color:#f0e0c8;}
-  #preview{width:100%;border-radius:6px;background:#111;display:block;
-           aspect-ratio:16/9;object-fit:cover;}
-  #playback{width:100%;border-radius:6px;margin-top:8px;display:block;}
-  .row{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap;}
-  select{padding:6px 10px;border-radius:6px;border:1px solid #c4884a;
-         background:rgba(30,15,5,0.9);color:#f0e0c8;font-size:13px;flex:1;min-width:0;}
+  html,body{background:transparent;font-family:sans-serif;}
+  #wrap{background:rgba(20,10,5,0.88);border-radius:10px;padding:12px;color:#f0e0c8;}
+
+  /* preview — fixed height so controls always fit */
+  #preview{width:100%;height:300px;border-radius:6px;background:#111;
+           display:block;object-fit:cover;}
+  #playback{width:100%;height:300px;border-radius:6px;margin-top:6px;
+            display:block;object-fit:contain;background:#000;}
+
+  .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;}
+  select{padding:5px 8px;border-radius:6px;border:1px solid #c4884a;
+         background:rgba(30,15,5,0.9);color:#f0e0c8;font-size:12px;flex:1;min-width:0;}
   button{padding:8px 16px;border-radius:6px;border:1px solid #c4884a;
          background:rgba(139,92,42,0.85);color:#fff5e0;cursor:pointer;
          font-size:14px;font-weight:600;white-space:nowrap;}
   button:disabled{opacity:0.35;cursor:not-allowed;}
   button:hover:not(:disabled){background:rgba(180,120,60,0.95);}
-  #initBtn{width:100%;padding:12px;font-size:15px;margin-bottom:8px;}
-  #stopBtn{border-color:#e05050;background:rgba(120,40,40,0.85);}
-  #stopBtn:hover:not(:disabled){background:rgba(180,60,60,0.95);}
+  #initBtn{width:100%;padding:14px;font-size:15px;}
+  #stopBtn{border-color:#e05050;background:rgba(140,35,35,0.9);}
+  #stopBtn:hover:not(:disabled){background:rgba(190,55,55,0.95);}
   #newBtn{border-color:#6aaa6a;background:rgba(40,100,60,0.85);color:#d4f0d4;}
   #dlBtn{display:inline-block;padding:8px 16px;border-radius:6px;
          border:1px solid #6aaa6a;background:rgba(40,100,60,0.85);
          color:#d4f0d4;text-decoration:none;font-size:14px;font-weight:600;}
-  #timer{color:#ff7070;font-weight:700;font-size:15px;min-width:56px;}
-  #status{color:#aaa;font-size:12px;margin-top:6px;}
-  label{font-size:12px;color:#aaa;display:block;margin-bottom:3px;}
+
+  /* timer + rec indicator */
+  #timerBox{display:flex;align-items:center;gap:8px;}
+  #recDot{width:12px;height:12px;border-radius:50%;background:#ff3333;
+          display:none;animation:blink 1s infinite;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.2;}}
+  #timer{color:#ff7070;font-weight:700;font-size:18px;min-width:56px;font-variant-numeric:tabular-nums;}
+
+  label{font-size:11px;color:#888;display:block;margin-bottom:2px;}
+  .status{color:#888;font-size:12px;margin-top:6px;}
   #resultBox,#recordPhase{display:none;}
+  #initPhase{text-align:center;padding:30px 0;}
 </style>
 
 <div id="wrap">
 
-  <!-- Phase 1: init -->
+  <!-- Phase 1: permission -->
   <div id="initPhase">
     <button id="initBtn">📷 Włącz kamerę i mikrofon</button>
-    <div id="status">Kliknij przycisk aby przyznać dostęp do kamery i mikrofonu.</div>
+    <div class="status" id="status" style="margin-top:10px;">
+      Kliknij aby przyznać dostęp do kamery i mikrofonu.
+    </div>
   </div>
 
   <!-- Phase 2: recording -->
   <div id="recordPhase">
     <video id="preview" autoplay muted playsinline></video>
+
+    <!-- device selectors — compact single row -->
     <div class="row">
-      <div style="flex:1;min-width:180px;">
+      <div style="flex:1;min-width:140px;">
         <label>🎤 Mikrofon</label>
         <select id="micSel"></select>
       </div>
-      <div style="flex:1;min-width:150px;">
+      <div style="flex:1;min-width:120px;">
         <label>📹 Kamera</label>
         <select id="camSel"></select>
       </div>
     </div>
+
+    <!-- controls -->
     <div class="row">
       <button id="startBtn">🔴 Nagraj</button>
       <button id="stopBtn" disabled>⏹ Stop</button>
-      <span id="timer">00:00</span>
+      <div id="timerBox">
+        <div id="recDot"></div>
+        <span id="timer">00:00</span>
+      </div>
     </div>
-    <div id="status2" style="color:#aaa;font-size:12px;margin-top:6px;">
-      Kamera gotowa — wybierz urządzenia i kliknij Nagraj.
-    </div>
+    <div class="status" id="status2">Kamera gotowa — kliknij Nagraj.</div>
   </div>
 
-  <!-- Phase 3: result -->
+  <!-- Phase 3: playback + download -->
   <div id="resultBox">
     <video id="playback" controls playsinline></video>
-    <div class="row" style="margin-top:8px;">
+    <div class="row">
       <a id="dlBtn">💾 Pobierz nagranie</a>
       <button id="newBtn">🔄 Nowe nagranie</button>
     </div>
-    <div id="status3" style="color:#aaa;font-size:12px;margin-top:6px;"></div>
+    <div class="status" id="status3"></div>
   </div>
 
 </div>
