@@ -29,6 +29,10 @@ _video_recorder = st.components.v1.declare_component(
     "video_recorder",
     path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend"),
 )
+_VIDEO_REC_HTML = open(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "index.html"),
+    encoding="utf-8",
+).read()
 
 # ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
