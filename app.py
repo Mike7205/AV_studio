@@ -577,7 +577,7 @@ with tab_rec:
         with col2:
             st.components.v1.html(
                 _VIDEO_REC_HTML,     # ← Twój duży string z HTML + JS
-                height=720,          # zwiększona wysokość
+                height=936,
                 scrolling=True
             )
 
