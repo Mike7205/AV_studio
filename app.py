@@ -771,21 +771,60 @@ _VIDEO_REC_HTML = """
 
   // ── Start recording ───────────────────────────────────────────────────
   $('startBtn').onclick = function(){
+    // Guard: stream must be alive
+    if(!stream || !stream.active ||
+       stream.getTracks().filter(t=>t.readyState==='live').length===0){
+      $('status2').textContent='⚠ Strumień nieaktywny – odśwież stronę';
+      return;
+    }
     chunks=[];
-    const opts = MIME
-      ? {mimeType:MIME, videoBitsPerSecond:8_000_000, audioBitsPerSecond:256_000}
-      : {videoBitsPerSecond:8_000_000, audioBitsPerSecond:256_000};
-    recorder=new MediaRecorder(stream,opts);
-    recorder.ondataavailable=e=>{if(e.data.size>0)chunks.push(e.data);};
-    recorder.onstop=()=>{
+
+    // Build MediaRecorder — try MIME first, fall back to browser default
+    recorder = null;
+    const mimeList = MIME ? [MIME, ''] : [''];
+    for(const mime of mimeList){
+      try{
+        const opts = {videoBitsPerSecond:8_000_000, audioBitsPerSecond:256_000};
+        if(mime) opts.mimeType = mime;
+        recorder = new MediaRecorder(stream, opts);
+        break;
+      }catch(_){ recorder = null; }
+    }
+    if(!recorder){
+      $('status2').textContent='⚠ MediaRecorder niedostępny w tej przeglądarce';
+      return;
+    }
+
+    // Surface errors to the user instead of silently firing onstop
+    recorder.onerror = ev=>{
+      const msg = (ev.error && ev.error.message) ? ev.error.message : String(ev);
+      $('status2').textContent='⚠ Błąd nagrywania: '+msg;
       clearInterval(timerIv);
+      $('startBtn').disabled=false;
+      $('stopBtn').disabled=true;
+    };
+
+    recorder.ondataavailable = e=>{
+      if(e.data && e.data.size>0) chunks.push(e.data);
+    };
+
+    recorder.onstop = ()=>{
+      clearInterval(timerIv);
+      // If no data arrived the recorder failed immediately — tell the user
+      if(chunks.length===0){
+        $('status2').textContent=
+          '⚠ Brak danych – spróbuj ponownie lub użyj Chrome/Firefox';
+        $('startBtn').disabled=false;
+        $('stopBtn').disabled=true;
+        return;
+      }
       const blob=new Blob(chunks,{type:recorder.mimeType||'video/webm'});
       const url=URL.createObjectURL(blob);
       $('playback').src=url;
       $('dlBtn').href=url;
       // update download name live when user edits the field
       function refreshDl(){
-        const name=($('fname').value.trim()||'nagranie_av').replace(/\.[^.]+$/,'');
+        const name=($('fname').value.trim()||'nagranie_av').replace(/\\.[^.]+$/,'');
         $('dlBtn').download=name+'.'+EXT;
         $('dlBtn').textContent='💾 Pobierz '+name+'.'+EXT;
       }
@@ -796,7 +835,14 @@ _VIDEO_REC_HTML = """
       $('recordPhase').style.display='none';
       $('resultBox').style.display='block';
     };
-    recorder.start(200);
+
+    try{
+      recorder.start(1000);   // 1 s timeslice — bardziej kompatybilny niż 200 ms
+    }catch(e){
+      $('status2').textContent='⚠ Nie można rozpocząć: '+e.message;
+      return;
+    }
+
     t0=Date.now();
     timerIv=setInterval(()=>{
       const s=Math.floor((Date.now()-t0)/1000);
