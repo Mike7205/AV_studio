@@ -387,7 +387,7 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
 }})();
 </script>
 """
-    st.components.v1.html(html, height=210)
+    st.components.v1.html(html, height=1450)
 
 
 # ─── Processing ───────────────────────────────────────────────────────────────
