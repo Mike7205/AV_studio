@@ -578,7 +578,6 @@ with tab_rec:
             st.iframe(
                 _VIDEO_REC_HTML,     # ← Twój duży string z HTML + JS
                 height=936,
-                scrolling=True
             )
 
         # Komunikat po zakończeniu nagrywania (tymczasowy, dopóki nie przejdziesz na declare_component)
