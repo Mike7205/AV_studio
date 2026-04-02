@@ -391,7 +391,7 @@ def show_player(y: np.ndarray, sr: int, title: str = "",
 }})();
 </script>
 """
-    st.components.v1.html(html, height=1450)
+    st.iframe(html, height=1450)
 
 
 # ─── Processing ───────────────────────────────────────────────────────────────
@@ -575,7 +575,7 @@ with tab_rec:
         # Okienko nagrywania — 90% szerokości strony, wyśrodkowane
         col1, col2, col3 = st.columns([1, 9, 1])
         with col2:
-            st.components.v1.html(
+            st.iframe(
                 _VIDEO_REC_HTML,     # ← Twój duży string z HTML + JS
                 height=936,
                 scrolling=True
