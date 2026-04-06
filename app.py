@@ -178,6 +178,7 @@ for k, v in {
     "edit_src_override": None,  # force source selection from button
     "_upload_sig":       None,  # (name, size) to avoid re-processing on rerun
     "mp4_bytes":         None,  # converted mp4 video bytes
+    "mp4_out_name":      "nagranie.mp4",
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -569,27 +570,17 @@ with tab_rec:
     else:
         st.info(
             "Nagrywa kamerę + mikrofon bezpośrednio w przeglądarce. "
-            "Po zakończeniu pobierz plik MP4/WebM przyciskiem poniżej.",
+            "Po zakończeniu pobierz plik WebM przyciskiem w okienku, "
+            "a następnie wgraj go poniżej aby pobrać jako MP4.",
             icon="🎥",
         )
 
-        # Okienko nagrywania — 90% szerokości strony, wyśrodkowane
-        col1, col2, col3 = st.columns([1, 9, 1])
-        with col2:
-            st.iframe(
-                _VIDEO_REC_HTML,     # ← Twój duży string z HTML + JS
-                height=936,
-            )
-
-        st.caption("✅ Po nagraniu pobierz plik WebM przyciskiem w okienku, następnie wgraj go poniżej aby skonwertować do MP4.")
-
-        st.divider()
-        st.subheader("🎬 Konwersja WebM → MP4")
+        # ── Konwersja WebM → MP4 (PRZED okienkiem) ───────────────────────────
+        st.subheader("🎬 Krok 2 — Konwersja WebM → MP4")
         webm_file = st.file_uploader(
-            "Wgraj nagranie WebM",
+            "Wgraj nagranie WebM (pobrane z okienka poniżej)",
             type=["webm", "mp4"],
             key="webm_upload",
-            label_visibility="collapsed",
         )
         if webm_file is not None:
             col_a, col_b = st.columns([3, 1])
@@ -610,6 +601,7 @@ with tab_rec:
                                 check=True, capture_output=True,
                             )
                             st.session_state["mp4_bytes"] = out_path.read_bytes()
+                            st.session_state["mp4_out_name"] = out_name
                         st.success("Gotowe!")
                     except subprocess.CalledProcessError as e:
                         st.error(f"Błąd ffmpeg: {e.stderr.decode()[-500:]}")
@@ -617,13 +609,23 @@ with tab_rec:
                         st.error(f"Błąd: {exc}")
 
         if st.session_state.get("mp4_bytes"):
-            fname = st.session_state.get("mp4_name_dl", out_name if webm_file else "nagranie.mp4")
             st.download_button(
                 "💾 Pobierz MP4",
                 data=st.session_state["mp4_bytes"],
-                file_name=out_name if webm_file else "nagranie.mp4",
+                file_name=st.session_state.get("mp4_out_name", "nagranie.mp4"),
                 mime="video/mp4",
                 key="dl_mp4",
+            )
+
+        st.divider()
+
+        # ── Okienko nagrywania (Krok 1) ───────────────────────────────────────
+        st.subheader("🎥 Krok 1 — Nagraj wideo")
+        col1, col2, col3 = st.columns([1, 9, 1])
+        with col2:
+            st.iframe(
+                _VIDEO_REC_HTML,
+                height=700,
             )
 
 # ══════════════════════════════════════════════════════════════════════════════
