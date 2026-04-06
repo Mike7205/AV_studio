@@ -575,10 +575,21 @@ with tab_rec:
             icon="🎥",
         )
 
-        # ── Konwersja WebM → MP4 (PRZED okienkiem) ───────────────────────────
-        st.subheader("🎬 Krok 2 — Konwersja WebM → MP4")
+        # ── Okienko nagrywania ────────────────────────────────────────────────
+        col1, col2, col3 = st.columns([1, 9, 1])
+        with col2:
+            st.iframe(
+                _VIDEO_REC_HTML,
+                height=700,
+            )
+
+        st.divider()
+
+        # ── Konwersja WebM → MP4 ──────────────────────────────────────────────
+        st.subheader("🎬 Konwersja WebM → MP4")
+        st.caption("Pobierz WebM z okienka powyżej, wgraj tutaj i pobierz jako MP4.")
         webm_file = st.file_uploader(
-            "Wgraj nagranie WebM (pobrane z okienka poniżej)",
+            "Wgraj nagranie WebM",
             type=["webm", "mp4"],
             key="webm_upload",
         )
@@ -586,7 +597,7 @@ with tab_rec:
             col_a, col_b = st.columns([3, 1])
             out_name = col_a.text_input("Nazwa pliku MP4", value=Path(webm_file.name).stem + ".mp4", key="mp4_name")
             if col_b.button("▶ Konwertuj do MP4", type="primary", key="convert_btn"):
-                with st.spinner("Konwertuję — ffmpeg re-enkoduje wideo…"):
+                with st.spinner("Konwertuję…"):
                     try:
                         with tempfile.TemporaryDirectory() as td:
                             td = Path(td)
@@ -615,17 +626,6 @@ with tab_rec:
                 file_name=st.session_state.get("mp4_out_name", "nagranie.mp4"),
                 mime="video/mp4",
                 key="dl_mp4",
-            )
-
-        st.divider()
-
-        # ── Okienko nagrywania (Krok 1) ───────────────────────────────────────
-        st.subheader("🎥 Krok 1 — Nagraj wideo")
-        col1, col2, col3 = st.columns([1, 9, 1])
-        with col2:
-            st.iframe(
-                _VIDEO_REC_HTML,
-                height=700,
             )
 
 # ══════════════════════════════════════════════════════════════════════════════
