@@ -177,6 +177,7 @@ for k, v in {
     "mic_key":          0,
     "edit_src_override": None,  # force source selection from button
     "_upload_sig":       None,  # (name, size) to avoid re-processing on rerun
+    "mp4_bytes":         None,  # converted mp4 video bytes
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -580,8 +581,50 @@ with tab_rec:
                 height=936,
             )
 
-        # Komunikat po zakończeniu nagrywania (tymczasowy, dopóki nie przejdziesz na declare_component)
-        st.caption("✅ Po nagraniu plik powinien pojawić się do pobrania w przeglądarce.")
+        st.caption("✅ Po nagraniu pobierz plik WebM przyciskiem w okienku, następnie wgraj go poniżej aby skonwertować do MP4.")
+
+        st.divider()
+        st.subheader("🎬 Konwersja WebM → MP4")
+        webm_file = st.file_uploader(
+            "Wgraj nagranie WebM",
+            type=["webm", "mp4"],
+            key="webm_upload",
+            label_visibility="collapsed",
+        )
+        if webm_file is not None:
+            col_a, col_b = st.columns([3, 1])
+            out_name = col_a.text_input("Nazwa pliku MP4", value=Path(webm_file.name).stem + ".mp4", key="mp4_name")
+            if col_b.button("▶ Konwertuj do MP4", type="primary", key="convert_btn"):
+                with st.spinner("Konwertuję — ffmpeg re-enkoduje wideo…"):
+                    try:
+                        with tempfile.TemporaryDirectory() as td:
+                            td = Path(td)
+                            in_path  = td / ("input" + Path(webm_file.name).suffix)
+                            out_path = td / "output.mp4"
+                            in_path.write_bytes(webm_file.read())
+                            subprocess.run(
+                                ["ffmpeg", "-y", "-i", str(in_path),
+                                 "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                                 "-c:a", "aac", "-b:a", "192k",
+                                 str(out_path)],
+                                check=True, capture_output=True,
+                            )
+                            st.session_state["mp4_bytes"] = out_path.read_bytes()
+                        st.success("Gotowe!")
+                    except subprocess.CalledProcessError as e:
+                        st.error(f"Błąd ffmpeg: {e.stderr.decode()[-500:]}")
+                    except Exception as exc:
+                        st.error(f"Błąd: {exc}")
+
+        if st.session_state.get("mp4_bytes"):
+            fname = st.session_state.get("mp4_name_dl", out_name if webm_file else "nagranie.mp4")
+            st.download_button(
+                "💾 Pobierz MP4",
+                data=st.session_state["mp4_bytes"],
+                file_name=out_name if webm_file else "nagranie.mp4",
+                mime="video/mp4",
+                key="dl_mp4",
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 – EDIT & EXPORT
